@@ -17,7 +17,7 @@ afterEach(async () => {
   delete process.env.TRYON_API_KEY
 })
 
-async function postJson(server, body) {
+async function requestJson(server, { path = '/__tryon', method = 'GET', body } = {}) {
   if (!server.listening) {
     await new Promise((resolve, reject) => {
       server.once('error', reject)
@@ -27,21 +27,25 @@ async function postJson(server, body) {
   }
 
   const address = server.address()
-  const payload = typeof body === 'string' ? body : JSON.stringify(body)
+  const payload = body == null ? '' : typeof body === 'string' ? body : JSON.stringify(body)
+  const headers = payload.length > 0
+    ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+    : undefined
+
   return new Promise((resolve, reject) => {
     const outgoing = httpRequest({
       hostname: '127.0.0.1',
       port: address.port,
-      path: '/__tryon',
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
+      path,
+      method,
+      headers,
     }, incoming => {
       const chunks = []
       incoming.on('data', chunk => chunks.push(chunk))
       incoming.on('error', reject)
       incoming.on('end', () => resolve({
         status: incoming.statusCode,
-        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8') || 'null'),
       }))
     })
     outgoing.on('error', reject)
@@ -49,7 +53,38 @@ async function postJson(server, body) {
   })
 }
 
+function postJson(server, body) {
+  return requestJson(server, { path: '/__tryon', method: 'POST', body })
+}
+
 describe('tryon-api input boundaries', () => {
+  it('reports ready health when API key is configured', async () => {
+    process.env.TRYON_API_KEY = 'test-only-key'
+
+    const response = await requestJson(createTryonServer(), {
+      path: '/__tryon/health',
+    })
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: { ok: true, state: 'ready' },
+    })
+  })
+
+  it('reports misconfigured health with 503 when API key is missing', async () => {
+    const response = await requestJson(createTryonServer(), {
+      path: '/__tryon/health',
+    })
+
+    expect(response.status).toBe(503)
+    expect(response.body).toMatchObject({
+      ok: false,
+      state: 'misconfigured',
+    })
+    expect(typeof response.body.reason).toBe('string')
+    expect(response.body.reason.length).toBeGreaterThan(0)
+  })
+
   it('accepts one person and one JPEG garment before calling upstream once', async () => {
     process.env.TRYON_API_KEY = 'test-only-key'
     const upstreamFetch = vi.fn().mockResolvedValue(new Response(

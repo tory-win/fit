@@ -26,6 +26,8 @@ export type TryonProbeState =
   | 'timeout'
   | 'http_error'
   | 'invalid_payload'
+  | 'misconfigured'
+  | 'unavailable'
   | 'network_error'
 
 export interface TryonProbeStatus {
@@ -62,11 +64,36 @@ function isAbortError(error: unknown): boolean {
   )
 }
 
+function readProbeState(payload: unknown): TryonProbeState | null {
+  if (!payload || typeof payload !== 'object') return null
+
+  switch ((payload as { state?: unknown }).state) {
+    case 'ok':
+      return 'ok'
+    case 'misconfigured':
+      return 'misconfigured'
+    case 'unavailable':
+      return 'unavailable'
+    default:
+      return null
+  }
+}
+
 export function parseTryonProbeResponse(
   response: Pick<Response, 'ok' | 'status'>,
   payload: unknown,
 ): TryonProbeStatus {
+  const state = readProbeState(payload)
+
   if (!response.ok) {
+    if (state === 'misconfigured' || state === 'unavailable') {
+      return {
+        ok: false,
+        state,
+        status: response.status,
+      }
+    }
+
     return {
       ok: false,
       state: 'http_error',
@@ -75,6 +102,14 @@ export function parseTryonProbeResponse(
   }
 
   if (!payload || typeof payload !== 'object' || (payload as { ok?: unknown }).ok !== true) {
+    if (state === 'misconfigured' || state === 'unavailable') {
+      return {
+        ok: false,
+        state,
+        status: response.status,
+      }
+    }
+
     return {
       ok: false,
       state: 'invalid_payload',

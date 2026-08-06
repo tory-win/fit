@@ -140,9 +140,9 @@ export function createTryonServer({ upstreamFetch = fetch } = {}) {
   if (url === '/__tryon/health') {
     try {
       apiKey()
-      send(200, { ok: true, model: MODEL })
+      send(200, { ok: true, state: 'ready', model: MODEL })
     } catch (error) {
-      send(200, { ok: false, reason: error.message })
+      send(503, { ok: false, state: 'misconfigured', reason: error.message, model: MODEL })
     }
     return
   }
