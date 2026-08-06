@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
+import { ipfitReleaseContract } from './src/lib/releaseContract.js'
+
 const linkedOrigin = process.env.OJJEOM_PUBLIC_ORIGIN
 const linkedUrl = linkedOrigin ? new URL(linkedOrigin) : null
 const linkedBase = linkedUrl
@@ -32,6 +34,31 @@ function restoreFunnelMount(base: string): Plugin {
       })
       server.httpServer?.prependListener('upgrade', request => {
         request.url = rewrite(request.url)
+      })
+    },
+  }
+}
+
+function releaseEndpoint(base: string): Plugin {
+  const route = `${base.replace(/\/+$/, '')}/__release`
+  const payload = ipfitReleaseContract(process.env.CHAENGI_RELEASE_COMMIT)
+
+  return {
+    name: 'ipfit-release-endpoint',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const url = (request.url ?? '').split('?')[0]
+        if (url !== route) return next()
+        if (request.method !== 'GET') {
+          response.statusCode = 405
+          response.setHeader('Allow', 'GET')
+          response.end()
+          return
+        }
+        response.statusCode = 200
+        response.setHeader('Cache-Control', 'no-store')
+        response.setHeader('Content-Type', 'application/json; charset=utf-8')
+        response.end(JSON.stringify(payload))
       })
     },
   }
@@ -225,6 +252,7 @@ export default defineConfig({
   },
   plugins: [
     ...(linkedUrl ? [restoreFunnelMount(linkedBase)] : []),
+    releaseEndpoint(linkedBase),
     tryonDevEndpoint(linkedBase),
     traceCollector(linkedBase),
     react(),
