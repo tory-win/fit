@@ -1,0 +1,8 @@
+title = "Ipfit secret scanning"
+
+[allowlist]
+description = "Local Preferences keys are public identifiers, not credentials"
+regexes = [
+  '''ojjeom\.notification\.v1''',
+  '''ojjeom\.notification\.evening\.v1'''
+]

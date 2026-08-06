@@ -1,0 +1,39 @@
+services:
+  tryon-api:
+    build: ./tryon-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TRYON_PORT:-8319}:8319"
+    environment:
+      TRYON_PORT: 8319
+      TRYON_PROXY: ${TRYON_PROXY:-http://host.docker.internal:8318}
+      TRYON_MODEL: ${TRYON_MODEL:-gpt-image-2}
+      TRYON_QUALITY: ${TRYON_QUALITY:-medium}
+      TRYON_API_KEY_FILE: /run/secrets/tryon_proxy_config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    secrets:
+      - tryon_proxy_config
+
+  web:
+    image: node:22
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "127.0.0.1:${IPFIT_WEB_PORT:-15174}:15174"
+    environment:
+      VITE_APP_ENV: ${VITE_APP_ENV:-real}
+      VITE_TRYON_API_URL: ${VITE_TRYON_API_URL:-http://127.0.0.1:8319/__tryon}
+    volumes:
+      - ..:/app
+      - web_node_modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 15174 --strictPort
+    depends_on:
+      - tryon-api
+
+secrets:
+  tryon_proxy_config:
+    file: ${TRYON_PROXY_CONFIG_PATH:?set TRYON_PROXY_CONFIG_PATH to a local read-only config file}
+
+volumes:
+  web_node_modules:
