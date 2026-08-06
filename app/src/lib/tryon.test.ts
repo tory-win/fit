@@ -7,6 +7,7 @@ import {
   viewsUsedOn,
   type StoredTryonImage,
 } from './tryon'
+import { parseTryonProbeResponse } from './tryonService'
 
 const image: StoredTryonImage = {
   date: '2026-07-26',
@@ -69,5 +70,29 @@ describe('parseViewLog', () => {
     })
     expect(parseViewLog('{broken')).toBeNull()
     expect(parseViewLog(null)).toBeNull()
+  })
+})
+
+describe('parseTryonProbeResponse', () => {
+  it('accepts healthy payloads', () => {
+    expect(parseTryonProbeResponse({ ok: true, status: 200 }, { ok: true })).toEqual({
+      ok: true,
+      state: 'ok',
+      status: 200,
+    })
+  })
+
+  it('distinguishes HTTP failures from payload failures', () => {
+    expect(parseTryonProbeResponse({ ok: false, status: 503 }, { ok: true })).toEqual({
+      ok: false,
+      state: 'http_error',
+      status: 503,
+    })
+
+    expect(parseTryonProbeResponse({ ok: true, status: 200 }, { ready: true })).toEqual({
+      ok: false,
+      state: 'invalid_payload',
+      status: 200,
+    })
   })
 })

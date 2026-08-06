@@ -21,6 +21,19 @@ const ENDPOINT = normalizeTryonEndpoint(EXTERNAL, BASE)
 export const TRYON_PROBE_TIMEOUT_MS = 3_000
 export const TRYON_GENERATE_TIMEOUT_MS = 240_000
 
+export type TryonProbeState =
+  | 'ok'
+  | 'timeout'
+  | 'http_error'
+  | 'invalid_payload'
+  | 'network_error'
+
+export interface TryonProbeStatus {
+  ok: boolean
+  state: TryonProbeState
+  status?: number
+}
+
 export interface TryonGeneration {
   base64: string
   elapsedMs: number
@@ -40,19 +53,62 @@ function timeoutSignal(ms: number): AbortSignal {
   return controller.signal
 }
 
+function isAbortError(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && 'name' in error
+    && (error as { name?: unknown }).name === 'AbortError',
+  )
+}
+
+export function parseTryonProbeResponse(
+  response: Pick<Response, 'ok' | 'status'>,
+  payload: unknown,
+): TryonProbeStatus {
+  if (!response.ok) {
+    return {
+      ok: false,
+      state: 'http_error',
+      status: response.status,
+    }
+  }
+
+  if (!payload || typeof payload !== 'object' || (payload as { ok?: unknown }).ok !== true) {
+    return {
+      ok: false,
+      state: 'invalid_payload',
+      status: response.status,
+    }
+  }
+
+  return {
+    ok: true,
+    state: 'ok',
+    status: response.status,
+  }
+}
+
 /** 이 빌드에서 실제 생성이 가능한지 한 번만 확인한다. */
-export async function probeTryonService(): Promise<boolean> {
+export async function probeTryonServiceStatus(): Promise<TryonProbeStatus> {
   try {
     const response = await fetch(`${ENDPOINT}/health`, {
       signal: timeoutSignal(TRYON_PROBE_TIMEOUT_MS),
     })
-    if (!response.ok) return false
 
-    const payload: unknown = await response.json()
-    return Boolean(payload && typeof payload === 'object' && (payload as { ok?: boolean }).ok)
-  } catch {
-    return false
+    const payload: unknown = await response.json().catch(() => null)
+    return parseTryonProbeResponse(response, payload)
+  } catch (error) {
+    return {
+      ok: false,
+      state: isAbortError(error) ? 'timeout' : 'network_error',
+    }
   }
+}
+
+export async function probeTryonService(): Promise<boolean> {
+  const status = await probeTryonServiceStatus()
+  return status.ok
 }
 
 export async function generateTryon(
@@ -71,11 +127,15 @@ export async function generateTryon(
   })
 
   const payload: unknown = await response.json().catch(() => null)
-  if (!response.ok || !payload || typeof payload !== 'object') {
+  if (!response.ok) {
     const reason = payload && typeof payload === 'object'
       ? String((payload as { error?: unknown }).error ?? '')
       : ''
-    throw new Error(reason || '생성 서버가 응답하지 않았어요.')
+    throw new Error(reason || `생성 서버 HTTP ${response.status} 오류예요.`)
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('생성 서버 응답 형식이 올바르지 않아요.')
   }
 
   const result = payload as { image?: unknown; elapsedMs?: unknown; model?: unknown }
