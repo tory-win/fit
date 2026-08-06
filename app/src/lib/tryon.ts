@@ -35,6 +35,20 @@ export interface TryonViewLog {
   count: number
 }
 
+function normaliseTryonKind(kind?: TryonImageKind): TryonImageKind {
+  return kind ?? 'outfit'
+}
+
+function tryonPathOf(today: string, outfitKey: string, kind?: TryonImageKind): string {
+  const safeKind = normaliseTryonKind(kind)
+  const safeOutfitKey = outfitKey.slice(0, 40).replace(/[^\w+-]/g, '')
+  return `${TRYON_IMAGE_DIRECTORY}/${today}-${safeKind}-${safeOutfitKey}.jpg`
+}
+
+function matchesTryonIdentity(item: StoredTryonImage, outfitKey: string, kind?: TryonImageKind): boolean {
+  return item.outfitKey === outfitKey && normaliseTryonKind(item.kind) === normaliseTryonKind(kind)
+}
+
 /** 같은 코디면 같은 키 — 아이템 구성이 바뀌면 새로 생성한다. */
 export function outfitKeyOf(itemIds: readonly string[]): string {
   return [...itemIds].sort().join('+')
@@ -128,7 +142,8 @@ export async function saveTryonImage(
   metadata: Pick<StoredTryonImage, 'kind' | 'categories' | 'itemIds'> = {},
   now = new Date(),
 ): Promise<TryonImage> {
-  const path = `${TRYON_IMAGE_DIRECTORY}/${today}-${outfitKey.slice(0, 40).replace(/[^\w+-]/g, '')}.jpg`
+  const kind = normaliseTryonKind(metadata.kind)
+  const path = tryonPathOf(today, outfitKey, kind)
   await Filesystem.writeFile({
     path,
     data: jpegBase64,
@@ -141,22 +156,27 @@ export async function saveTryonImage(
     outfitKey,
     path,
     createdAt: now.toISOString(),
+    kind,
     ...metadata,
   }
   const current = await readIndex()
-  const replaced = current.filter(item => item.outfitKey === outfitKey && item.path !== path)
+  const replaced = current.filter(item => matchesTryonIdentity(item, outfitKey, kind) && item.path !== path)
   await Promise.all(replaced.map(item => deleteDeviceFile(item.path)))
-  const rest = current.filter(item => item.outfitKey !== outfitKey)
+  const rest = current.filter(item => !matchesTryonIdentity(item, outfitKey, kind))
   await writeIndex([stored, ...rest])
 
   return { ...stored, imageUrl: await deviceImageUrl(path) }
 }
 
-export async function deleteTryonImage(outfitKey: string): Promise<void> {
+export async function deleteTryonImage(outfitKey: string, kind?: TryonImageKind): Promise<void> {
   const items = await readIndex()
-  const targets = items.filter(item => item.outfitKey === outfitKey)
+  const targets = kind === undefined
+    ? items.filter(item => item.outfitKey === outfitKey)
+    : items.filter(item => matchesTryonIdentity(item, outfitKey, kind))
   await Promise.all(targets.map(item => deleteDeviceFile(item.path)))
-  await writeIndex(items.filter(item => item.outfitKey !== outfitKey))
+  await writeIndex(kind === undefined
+    ? items.filter(item => item.outfitKey !== outfitKey)
+    : items.filter(item => !matchesTryonIdentity(item, outfitKey, kind)))
 }
 
 /** 사용자가 내 데이터 전체 삭제를 선택했을 때 호출한다. */

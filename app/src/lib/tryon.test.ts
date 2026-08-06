@@ -1,13 +1,56 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const preferenceStore = new Map<string, string>()
+const writtenPaths: string[] = []
+const deletedPaths: string[] = []
+
+vi.mock('@capacitor/preferences', () => ({
+  Preferences: {
+    get: vi.fn(async ({ key }: { key: string }) => ({ value: preferenceStore.get(key) ?? null })),
+    set: vi.fn(async ({ key, value }: { key: string, value: string }) => {
+      preferenceStore.set(key, value)
+    }),
+    remove: vi.fn(async ({ key }: { key: string }) => {
+      preferenceStore.delete(key)
+    }),
+  },
+}))
+
+vi.mock('@capacitor/filesystem', () => ({
+  Directory: { Data: 'DATA' },
+  Filesystem: {
+    writeFile: vi.fn(async ({ path }: { path: string }) => {
+      writtenPaths.push(path)
+    }),
+  },
+}))
+
+vi.mock('./deviceImage', () => ({
+  deleteDeviceFile: vi.fn(async (path: string) => {
+    deletedPaths.push(path)
+  }),
+  deviceImageUrl: vi.fn(async (path: string) => `device://${path}`),
+}))
+
 import {
+  TRYON_INDEX_KEY,
+  deleteTryonImage,
+  loadTryonImages,
   nextViewLog,
   outfitKeyOf,
   parseTryonIndex,
   parseViewLog,
+  saveTryonImage,
   viewsUsedOn,
   type StoredTryonImage,
 } from './tryon'
 import { parseTryonProbeResponse } from './tryonService'
+
+beforeEach(() => {
+  preferenceStore.clear()
+  writtenPaths.length = 0
+  deletedPaths.length = 0
+})
 
 const image: StoredTryonImage = {
   date: '2026-07-26',
@@ -45,6 +88,40 @@ describe('parseTryonIndex', () => {
       categories: ['상의'],
     }
     expect(parseTryonIndex(JSON.stringify([image, yesterday]))).toEqual([image, yesterday])
+  })
+})
+
+describe('try-on storage identity', () => {
+  it('keeps outfit and shop results for the same outfitKey separate and deletes only the targeted kind', async () => {
+    const today = '2026-07-26'
+    const outfitKey = 'a+b'
+
+    const outfit = await saveTryonImage(today, outfitKey, 'outfit-base64', {
+      kind: 'outfit',
+      itemIds: ['a', 'b'],
+    })
+    const shop = await saveTryonImage(today, outfitKey, 'shop-base64', {
+      kind: 'shop',
+      itemIds: ['a', 'b'],
+    })
+
+    expect(outfit.path).toBe('tryon/v1/2026-07-26-outfit-a+b.jpg')
+    expect(shop.path).toBe('tryon/v1/2026-07-26-shop-a+b.jpg')
+    expect(writtenPaths).toEqual([
+      'tryon/v1/2026-07-26-outfit-a+b.jpg',
+      'tryon/v1/2026-07-26-shop-a+b.jpg',
+    ])
+
+    const storedBeforeDelete = parseTryonIndex(preferenceStore.get(TRYON_INDEX_KEY) ?? null)
+    expect(storedBeforeDelete.map(item => item.kind)).toEqual(['shop', 'outfit'])
+
+    await deleteTryonImage(outfitKey, 'shop')
+
+    expect(deletedPaths).toEqual(['tryon/v1/2026-07-26-shop-a+b.jpg'])
+    expect(await loadTryonImages()).toEqual([{ ...outfit, imageUrl: 'device://tryon/v1/2026-07-26-outfit-a+b.jpg' }])
+
+    const storedAfterDelete = parseTryonIndex(preferenceStore.get(TRYON_INDEX_KEY) ?? null)
+    expect(storedAfterDelete).toEqual([expect.objectContaining({ outfitKey, kind: 'outfit' })])
   })
 })
 
