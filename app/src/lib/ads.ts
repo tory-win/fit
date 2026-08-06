@@ -1,5 +1,5 @@
 // 보상형 광고 — 기획서 M-2, docs/광고-커머스-연동.md
-// 광고 단위 ID가 없으면 구글 공식 테스트 광고로 돌린다. 고객 화면에는 운영 구분을 노출하지 않는다.
+// 개발 빌드에서만 광고 단위 ID가 없으면 구글 공식 테스트 광고로 돌린다. 고객 화면에는 운영 구분을 노출하지 않는다.
 // 실제로 광고가 재생되지 않으면 스타일패스를 주지 않는다.
 
 import { AdMob, RewardAdPluginEvents, type AdMobRewardItem } from '@capacitor-community/admob'
@@ -31,6 +31,10 @@ export function resolveTesting(configured: string | undefined, dev: boolean): bo
   return !configured?.trim() || dev
 }
 
+export function shouldBlockLiveAds(configured: string | undefined, dev: boolean): boolean {
+  return !dev && !configured?.trim()
+}
+
 export function adsUnitId(): string {
   return resolveUnitId(configuredUnitId)
 }
@@ -44,6 +48,10 @@ let initialised = false
 export async function initializeAds(): Promise<AdsState> {
   if (!Capacitor.isNativePlatform()) {
     return { available: false, testing: isTestAds(), reason: 'iPhone 앱에서만 광고를 볼 수 있어요.' }
+  }
+
+  if (shouldBlockLiveAds(configuredUnitId, import.meta.env.DEV)) {
+    return { available: false, testing: false, reason: '운영 광고 설정이 없어 광고를 표시할 수 없어요.' }
   }
 
   try {
@@ -67,6 +75,7 @@ export async function initializeAds(): Promise<AdsState> {
  */
 export async function showRewardedAd(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false
+  if (shouldBlockLiveAds(configuredUnitId, import.meta.env.DEV)) return false
 
   let settled = false
   let settle: (rewarded: boolean) => void = () => undefined
