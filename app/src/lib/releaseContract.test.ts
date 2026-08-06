@@ -7,12 +7,24 @@ describe('ipfit release contract', () => {
     const commit = 'A'.repeat(40)
     expect(ipfitReleaseContract(` ${commit} `)).toEqual({
       service: 'ipfit-web',
+      releaseState: 'verified',
       releaseCommit: 'a'.repeat(40),
     })
   })
 
-  it('does not misrepresent a missing or malformed commit as deployed source', () => {
-    expect(ipfitReleaseContract(undefined).releaseCommit).toBe('development')
-    expect(ipfitReleaseContract('abc123').releaseCommit).toBe('development')
+  it('marks empty release metadata as development', () => {
+    expect(ipfitReleaseContract(undefined)).toEqual({
+      service: 'ipfit-web',
+      releaseState: 'development',
+      releaseCommit: 'development',
+    })
+  })
+
+  it('fails closed for malformed release metadata', () => {
+    expect(ipfitReleaseContract('abc123')).toEqual({
+      service: 'ipfit-web',
+      releaseState: 'blocked',
+      releaseCommit: 'invalid',
+    })
   })
 })
