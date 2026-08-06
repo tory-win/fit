@@ -31,3 +31,12 @@ npm run ios:sync
 ## AI 입어보기 API
 
 `ops/tryon-api`는 입력 이미지를 메모리에서만 처리한다. API 키는 `TRYON_API_KEY` 또는 read-only로 마운트한 `TRYON_API_KEY_FILE`에서 읽으며, 클라이언트 번들에 넣지 않는다. 로컬 예시는 `ops/docker-compose.yml`을 사용한다.
+
+운영 입력 경계는 다음과 같다.
+
+- 요청 본문은 스트리밍 수신 중 22 MiB를 넘는 즉시 `413`으로 종료한다.
+- `person`과 `garments`는 엄격한 base64 JPEG만 허용하며, 디코딩한 각 이미지는 최대 5 MiB다.
+- 옷 이미지는 1~2장만 허용한다.
+- 형식 오류는 `400`, 크기 초과는 `413`으로 끝내고 이미지 생성 upstream을 호출하지 않는다.
+
+정상 입력, 잘못된 JSON/base64/JPEG/개수, 본문·이미지 크기 경계는 `ops/tryon-api/server.test.mjs`에서 회귀 검증한다.
