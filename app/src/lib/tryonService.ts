@@ -4,7 +4,19 @@
 
 const BASE = import.meta.env.BASE_URL || '/'
 const EXTERNAL = (import.meta.env.VITE_TRYON_API_URL as string | undefined)?.replace(/\/+$/, '')
-const ENDPOINT = EXTERNAL ? `${EXTERNAL}/__tryon` : `${BASE.replace(/\/+$/, '')}/__tryon`
+
+export function normalizeTryonEndpoint(external: string | undefined, base: string): string {
+  const normalizedExternal = external?.replace(/\/+$/, '')
+  if (normalizedExternal) {
+    return normalizedExternal.endsWith('/__tryon')
+      ? normalizedExternal
+      : `${normalizedExternal}/__tryon`
+  }
+
+  return `${base.replace(/\/+$/, '')}/__tryon`
+}
+
+const ENDPOINT = normalizeTryonEndpoint(EXTERNAL, BASE)
 
 export const TRYON_PROBE_TIMEOUT_MS = 3_000
 export const TRYON_GENERATE_TIMEOUT_MS = 240_000
