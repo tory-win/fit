@@ -179,6 +179,7 @@ import {
 } from './lib/weather'
 import {
   OUTFIT_SLOTS,
+  alternativeOutfits,
   gapMessage,
   recommend,
   targetGrade,
@@ -267,6 +268,7 @@ import {
 } from './lib/profile'
 import { FEATURES } from './lib/appEnv'
 import { PRE_TRYON_MAX_GARMENTS, isPreTryonKey, mergeGarments, preTryonKey } from './lib/preTryon'
+import { onboardingPlan, type OnboardingPlan } from './lib/onboardingFlow'
 
 interface Profile extends BirthInput {
   body: BodyProfile
@@ -301,8 +303,7 @@ const CAMERA_TIPS_KEY = 'ojjeom.cameraTips.v1'
 const RESTORABLE_ROUTES: Route[] = (['home', 'closet', 'fortune', 'stylebook', 'my'] as Route[])
   .filter(route => FEATURES.saju || route !== 'fortune')
 const FIRST_RUN_KEY = 'ojjeom.firstRun.v1'
-/** 가치 소개 · (생년월일: stage만) · 체형 · 첫 옷 등록 · 알림 — 기획서 §6.1 O-1~O-5, M9-기획.md §3 */
-const ONBOARDING_STEPS = FEATURES.saju ? 5 : 4
+/** 가치 소개 · (생년월일: stage만) · 체형 · 첫 옷 등록 · (iOS만) 알림 */
 const ONBOARDING_POINTS = [
   // M10 피벗 — 옷장 코디에 더해 "사기 전에 입어봄"이 동급 가치다
   { icon: Shirt, title: '내 옷장도, 사려는 옷도', body: '가진 옷으로 오늘 코디를 고르고, 살까 말까 한 옷은 사기 전에 미리 입어봐요.' },
@@ -542,6 +543,7 @@ export default function App() {
   >(null)
   const [tryonBusy, setTryonBusy] = useState(false)
   const [tryonError, setTryonError] = useState('')
+  const firstRunPlan = onboardingPlan(FEATURES.saju, morningPermission !== 'unsupported')
 
   const openBodyPhoto = (returnRoute: Route) => {
     setPhotoReturnRoute(returnRoute)
@@ -893,6 +895,13 @@ export default function App() {
       .map(id => closet.find(item => item.id === id))
       .filter((item): item is ClosetItem => Boolean(item))
   }, [todayEntry, closet])
+  const currentHomeItems = confirmedItems.length > 0 ? confirmedItems : (bestOutfit?.items ?? [])
+  const homeAlternatives = recommendation?.status === 'ok'
+    ? alternativeOutfits(recommendation.outfits, currentHomeItems)
+    : []
+  const alternativeRouteOutfits = pinnedId
+    ? (pinnedRecommendation?.status === 'ok' ? pinnedRecommendation.outfits : null)
+    : (recommendation?.status === 'ok' ? homeAlternatives : null)
 
   const openCamera = (category: ClosetCategory = uploadCategory) => {
     setUploadCategory(category)
@@ -1325,6 +1334,11 @@ export default function App() {
     })
   }
 
+  const completeFirstRun = () => {
+    setFirstRun(null)
+    void Preferences.set({ key: FIRST_RUN_KEY, value: 'done' })
+  }
+
   const confirmOutfit = async (outfit: Outfit) => {
     const entry: OutfitEntry = {
       date: today,
@@ -1403,10 +1417,12 @@ export default function App() {
   }
 
   const openAlternatives = () => {
-    if (!unlocked) {
-      requestUnlock()
+    if (homeAlternatives.length === 0) {
+      setRoute('add')
       return
     }
+    // 잠금 해제는 이름이 정확한 "코디 열어보기"에서만 한다.
+    if (!unlocked && !todayEntry) return
     setRoute('alternatives')
   }
 
@@ -1702,6 +1718,7 @@ export default function App() {
   if (!profile) {
     return (
       <Onboarding
+        plan={firstRunPlan}
         onDone={next => {
           persistProfile(next)
           setFirstRun('closet')
@@ -1714,7 +1731,7 @@ export default function App() {
     <>
       {route === 'home' && firstRun === 'body' && (
         <main className="app-screen onboarding">
-          <StepIndicator step={FEATURES.saju ? 3 : 2} />
+          <StepIndicator step={firstRunPlan.body} total={firstRunPlan.total} />
           <BodyForm
             title={<>핏까지 맞추려면<br /><em>내 몸의 기준</em>을 알려주세요</>}
             initial={profile.body}
@@ -1733,11 +1750,13 @@ export default function App() {
           onBack={() => setFirstRun('body')}
           onCamera={category => openCamera(category)}
           onAlbum={category => void importAlbum('new', undefined, category)}
-          onNext={() => setFirstRun('notify')}
+          step={firstRunPlan.closet}
+          total={firstRunPlan.total}
+          onNext={() => (firstRunPlan.notification ? setFirstRun('notify') : completeFirstRun())}
         />
       )}
 
-      {route === 'home' && firstRun === 'notify' && (
+      {route === 'home' && firstRun === 'notify' && firstRunPlan.notification !== null && (
         <FirstRunNotify
           settings={morningSettings}
           permission={morningPermission}
@@ -1745,10 +1764,9 @@ export default function App() {
           onToggle={() => void toggleMorningNotification()}
           onTimeChange={value => void changeMorningTime(value)}
           onBack={() => setFirstRun('closet')}
-          onDone={() => {
-            setFirstRun(null)
-            void Preferences.set({ key: FIRST_RUN_KEY, value: 'done' })
-          }}
+          step={firstRunPlan.notification}
+          total={firstRunPlan.total}
+          onDone={completeFirstRun}
         />
       )}
 
@@ -1760,6 +1778,7 @@ export default function App() {
           loading={closetLoading}
           weather={weather}
           recommendation={recommendation}
+          hasAlternatives={homeAlternatives.length > 0}
           unlocked={unlocked}
           confirmedItems={confirmedItems}
           confirmedAt={todayEntry?.confirmedAt}
@@ -1922,14 +1941,16 @@ export default function App() {
         />
       )}
 
-      {route === 'alternatives' && (pinnedRecommendation ?? recommendation)?.status === 'ok' && (
+      {route === 'alternatives' && alternativeRouteOutfits && (
         <AlternativesScreen
-          outfits={((pinnedRecommendation ?? recommendation) as { status: 'ok'; outfits: Outfit[] }).outfits}
+          outfits={alternativeRouteOutfits}
           pinnedLabel={pinnedId ? closet.find(item => item.id === pinnedId) : undefined}
+          unlocked={unlocked}
           onBack={() => {
             setPinnedId(null)
             setRoute(pinnedId ? 'item' : 'home')
           }}
+          onUnlock={requestUnlock}
           onConfirm={outfit => void confirmOutfit(outfit)}
         />
       )}
@@ -2206,7 +2227,7 @@ export default function App() {
   )
 }
 
-function Onboarding({ onDone }: { onDone: (profile: Profile) => void }) {
+function Onboarding({ plan, onDone }: { plan: OnboardingPlan; onDone: (profile: Profile) => void }) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [birth, setBirth] = useState<BirthInput | null>(null)
 
@@ -2219,7 +2240,7 @@ function Onboarding({ onDone }: { onDone: (profile: Profile) => void }) {
   if (step === 3) {
     return (
       <main className="app-screen onboarding">
-        <StepIndicator step={FEATURES.saju ? 3 : 2} onBack={() => setStep(FEATURES.saju ? 2 : 1)} />
+        <StepIndicator step={plan.body} total={plan.total} onBack={() => setStep(FEATURES.saju ? 2 : 1)} />
         <BodyForm
           title={<>핏까지 맞추려면<br /><em>내 몸의 기준</em>을 알려주세요</>}
           initial={EMPTY_BODY}
@@ -2233,7 +2254,7 @@ function Onboarding({ onDone }: { onDone: (profile: Profile) => void }) {
   if (step === 2 && FEATURES.saju) {
     return (
       <main className="app-screen onboarding">
-        <StepIndicator step={2} onBack={() => setStep(1)} />
+        <StepIndicator step={plan.birth ?? 2} total={plan.total} onBack={() => setStep(1)} />
         <BirthForm
           initial={birth ?? undefined}
           submitLabel="다음"
@@ -2261,7 +2282,7 @@ function Onboarding({ onDone }: { onDone: (profile: Profile) => void }) {
 
   return (
     <main className="app-screen onboarding intro-screen">
-      <StepIndicator step={1} />
+      <StepIndicator step={plan.intro} total={plan.total} />
       <div className="seal" aria-label="입핏">핏</div>
       <h1 className="onboarding-title">아침마다 뭐 입을지<br /><em>대신 골라드려요</em></h1>
 
@@ -2288,12 +2309,16 @@ function FirstRunCloset({
   onBack,
   onCamera,
   onAlbum,
+  step,
+  total,
   onNext,
 }: {
   count: number
   onBack: () => void
   onCamera: (category: ClosetCategory) => void
   onAlbum: (category: ClosetCategory) => void
+  step: number
+  total: number
   onNext: () => void
 }) {
   const enough = count >= OUTFIT_RICH_COUNT
@@ -2301,7 +2326,7 @@ function FirstRunCloset({
 
   return (
     <main className="app-screen onboarding first-run">
-      <StepIndicator step={ONBOARDING_STEPS - 1} onBack={onBack} />
+      <StepIndicator step={step} total={total} onBack={onBack} />
       <h1 className="onboarding-title">한 벌만 있어도<br /><em>코디를 보여드려요</em></h1>
       <p className="onboarding-copy">지금 몇 벌만 담아도 괜찮아요. 나중에 계속 추가할 수 있어요.</p>
 
@@ -2336,6 +2361,8 @@ function FirstRunNotify({
   onToggle,
   onTimeChange,
   onBack,
+  step,
+  total,
   onDone,
 }: {
   settings: MorningNotificationSettings
@@ -2344,13 +2371,15 @@ function FirstRunNotify({
   onToggle: () => void
   onTimeChange: (value: string) => void
   onBack: () => void
+  step: number
+  total: number
   onDone: () => void
 }) {
   const active = settings.enabled && permission === 'granted'
 
   return (
     <main className="app-screen onboarding first-run">
-      <StepIndicator step={ONBOARDING_STEPS} onBack={onBack} />
+      <StepIndicator step={step} total={total} onBack={onBack} />
       <h1 className="onboarding-title">아침 브리핑을<br /><em>받아볼까요?</em></h1>
       <p className="onboarding-copy">매일 한 번, 오늘의 코디를 알려드려요. 소리는 나지 않아요.</p>
 
@@ -2506,11 +2535,11 @@ function BirthForm({
 
 function StepIndicator({
   step,
-  total = ONBOARDING_STEPS,
+  total,
   onBack,
 }: {
   step: number
-  total?: number
+  total: number
   onBack?: () => void
 }) {
   return (
@@ -2762,6 +2791,7 @@ function HomeScreen({
   loading,
   weather,
   recommendation,
+  hasAlternatives,
   unlocked,
   confirmedItems,
   confirmedAt,
@@ -2788,6 +2818,7 @@ function HomeScreen({
   loading: boolean
   weather: WeatherState
   recommendation: RecommendResult | null
+  hasAlternatives: boolean
   unlocked: boolean
   confirmedItems: ClosetItem[]
   confirmedAt?: string
@@ -2919,9 +2950,15 @@ function HomeScreen({
             <Info aria-hidden="true" />이 옷들의 착용 기록을 남겼어요. 다음 추천에서는 잠시 뒤로 물러나요.
           </p>
           <div className="home-actions">
-            <button className="secondary-button" onClick={onAlternatives}>
-              <RefreshCw aria-hidden="true" />다른 코디로 바꾸기
-            </button>
+            {hasAlternatives ? (
+              <button className="secondary-button" onClick={onAlternatives}>
+                <RefreshCw aria-hidden="true" />다른 코디로 바꾸기
+              </button>
+            ) : (
+              <button className="secondary-button" onClick={onCamera}>
+                <Plus aria-hidden="true" />옷 더 등록하기
+              </button>
+            )}
           </div>
         </section>
       )}
@@ -3002,9 +3039,17 @@ function HomeScreen({
           <button className="primary-button" onClick={() => (unlocked ? onConfirm(best) : onUnlock())}>
             <Check aria-hidden="true" />{unlocked ? '이 코디로 입을게요' : '코디 열어보기'}
           </button>
-          <button className="bar-icon" onClick={onAlternatives} aria-label="다른 코디 보기">
-            <RefreshCw aria-hidden="true" /><small>다른 코디</small>
-          </button>
+          {hasAlternatives ? (
+            unlocked && (
+              <button className="bar-icon" onClick={onAlternatives} aria-label="다른 코디 보기">
+                <RefreshCw aria-hidden="true" /><small>다른 코디</small>
+              </button>
+            )
+          ) : (
+            <button className="bar-icon" onClick={onCamera} aria-label="옷 더 등록하기">
+              <Plus aria-hidden="true" /><small>옷 더 등록</small>
+            </button>
+          )}
           {unlocked && (
             <button className="bar-icon" onClick={() => onTryon(best)} aria-label="입은 모습 보기">
               <Sparkles aria-hidden="true" /><small>입은 모습</small>
@@ -3126,10 +3171,10 @@ function OutfitGrid({ items, gaps }: { items: ClosetItem[]; gaps: OutfitSlot[] }
         const item = bySlot.get(slot)
         return (
           <div key={slot} className={`outfit-slot ${item ? '' : 'empty'}`}>
-            <i>{slot}</i>
+            <i aria-hidden="true">{slot}</i>
             {item
               ? <img src={item.imageUrl} alt={`${item.color} ${item.category}`} />
-              : <span className="slot-placeholder" aria-label={`${slot} 없음`} />}
+              : <span className="slot-placeholder" role="img" aria-label={`${slot} 없음`} />}
           </div>
         )
       })}
@@ -3172,12 +3217,16 @@ function ReasonList({
 function AlternativesScreen({
   outfits,
   pinnedLabel,
+  unlocked,
   onBack,
+  onUnlock,
   onConfirm,
 }: {
   outfits: Outfit[]
   pinnedLabel?: ClosetItem
+  unlocked: boolean
   onBack: () => void
+  onUnlock: () => void
   onConfirm: (outfit: Outfit) => void
 }) {
   const [index, setIndex] = useState(0)
@@ -3222,12 +3271,19 @@ function AlternativesScreen({
 
       <div className="outfit-track" ref={trackRef} onScroll={handleScroll}>
         {outfits.map(outfit => (
-          <article className="outfit-card" key={outfit.id}>
+          <article className={`outfit-card ${unlocked ? '' : 'locked'}`} key={outfit.id}>
             <OutfitGrid items={outfit.items} gaps={outfit.gaps} />
             <div className="outfit-meta">
               <span className="mood">{outfit.mood}</span>
-              <span className="fit-score">적합도 <b>{outfit.score}</b></span>
+              <span className="fit-score">적합도 <b>{unlocked ? outfit.score : '—'}</b></span>
             </div>
+            {!unlocked && (
+              <div className="lock-layer">
+                <Lock aria-hidden="true" />
+                <strong>코디를 열면 조합을 볼 수 있어요</strong>
+                <span>열람권은 아래 버튼을 누를 때만 사용돼요.</span>
+              </div>
+            )}
           </article>
         ))}
       </div>
@@ -3240,15 +3296,15 @@ function AlternativesScreen({
         </div>
       )}
 
-      <ReasonList reasons={current.reasons} unlocked />
+      <ReasonList reasons={current.reasons} unlocked={unlocked} />
 
-      {current.gaps.length > 0 && (
+      {unlocked && current.gaps.length > 0 && (
         <p className="gap-note"><Info aria-hidden="true" />{gapMessage(current.gaps)}</p>
       )}
 
       <div className="home-actions">
-        <button className="primary-button" onClick={() => onConfirm(current)}>
-          <Check aria-hidden="true" />이 코디로 입을게요
+        <button className="primary-button" onClick={() => (unlocked ? onConfirm(current) : onUnlock())}>
+          <Check aria-hidden="true" />{unlocked ? '이 코디로 입을게요' : '코디 열어보기'}
         </button>
       </div>
     </main>

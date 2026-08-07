@@ -36,6 +36,13 @@ npm run ios:sync
 
 `ops/tryon-api`는 입력 이미지를 메모리에서만 처리한다. API 키는 `TRYON_API_KEY` 또는 read-only로 마운트한 `TRYON_API_KEY_FILE`에서 읽으며, 클라이언트 번들에 넣지 않는다. 로컬 예시는 `ops/docker-compose.yml`을 사용한다.
 
+운영 `web` 서비스는 Vite 개발 서버를 띄우지 않는다. `ops/web/Dockerfile`이 `real` 정적 번들을 만들고 Nginx가 `/ojjeom/`에서 제공하며, 같은 origin의 `/ojjeom/__tryon`만 독립 `tryon-api`로 전달한다. 배포 SHA는 빌드 시 `/ojjeom/__release`에 고정되고 잘못된 SHA는 이미지 빌드를 중단한다. 운영 컨테이너에는 소스 bind mount, HMR, 시작 시 `npm ci`가 없다.
+
+```bash
+CHAENGI_RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567 TRYON_PROXY_CONFIG_PATH=/absolute/read-only/config.yaml docker compose -f ops/docker-compose.yml config --quiet
+CHAENGI_RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567 TRYON_PROXY_CONFIG_PATH=/absolute/read-only/config.yaml docker compose -f ops/docker-compose.yml build web
+```
+
 운영 입력 경계는 다음과 같다.
 
 - 요청 본문은 스트리밍 수신 중 22 MiB를 넘는 즉시 `413`으로 종료한다.

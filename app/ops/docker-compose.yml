@@ -15,35 +15,24 @@ services:
     secrets:
       - tryon_proxy_config
     labels:
-      io.chaengi.release.commit: "${CHAENGI_RELEASE_COMMIT:-development}"
+      io.chaengi.release.commit: "${CHAENGI_RELEASE_COMMIT:?set a verified 40-character release commit}"
 
   web:
-    image: node:22
+    image: ipfit-web:${CHAENGI_RELEASE_COMMIT:?set a verified 40-character release commit}
+    build:
+      context: ..
+      dockerfile: ops/web/Dockerfile
+      args:
+        OJJEOM_PUBLIC_ORIGIN: ${OJJEOM_PUBLIC_ORIGIN:-https://macmini.tailbba978.ts.net:10000/ojjeom}
+        CHAENGI_RELEASE_COMMIT: ${CHAENGI_RELEASE_COMMIT:?set a verified 40-character release commit}
     restart: unless-stopped
-    working_dir: /app
     ports:
       - "127.0.0.1:${IPFIT_WEB_PORT:-15174}:15174"
-    environment:
-      VITE_APP_ENV: real
-      OJJEOM_PUBLIC_ORIGIN: ${OJJEOM_PUBLIC_ORIGIN:-https://macmini.tailbba978.ts.net:10000/ojjeom}
-      OJJEOM_TRYON_PROXY: ${OJJEOM_TRYON_PROXY:-http://host.docker.internal:8318}
-      CHAENGI_RELEASE_COMMIT: ${CHAENGI_RELEASE_COMMIT:-development}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ..:/app
-      - web_node_modules:/app/node_modules
-      - ../../artifacts:/artifacts
-      - ${TRYON_PROXY_CONFIG_PATH:?set TRYON_PROXY_CONFIG_PATH to a local read-only config file}:/root/.cli-proxy-api/merged-config.yaml:ro
-    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 15174 --strictPort --mode real"
     depends_on:
       - tryon-api
     labels:
-      io.chaengi.release.commit: "${CHAENGI_RELEASE_COMMIT:-development}"
+      io.chaengi.release.commit: "${CHAENGI_RELEASE_COMMIT:?set a verified 40-character release commit}"
 
 secrets:
   tryon_proxy_config:
     file: ${TRYON_PROXY_CONFIG_PATH:?set TRYON_PROXY_CONFIG_PATH to a local read-only config file}
-
-volumes:
-  web_node_modules:

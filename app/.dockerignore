@@ -1,0 +1,9 @@
+node_modules
+dist
+ios
+.env
+.env.*
+!.env.example
+*.local
+*.log
+.DS_Store

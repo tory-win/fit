@@ -26,6 +26,7 @@ npm run build:real
 - `app/src`: React 앱과 도메인 로직
 - `app/ios`: Capacitor iOS 프로젝트에서 재생성되지 않는 정본 파일
 - `app/ops/tryon-api`: 이미지 생성 프록시
+- `app/ops/web`: real 정적 번들을 제공하고 tryon API를 같은 origin으로 연결하는 Nginx 이미지
 - `app/ops/docker-compose.yml`: 로컬 격리 실행 예시
 - `docs`: 사용자 고지와 운영 계약
 

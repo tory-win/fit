@@ -99,6 +99,20 @@ export type RecommendResult =
   | { status: 'ok'; outfits: Outfit[]; relaxed: boolean }
   | { status: 'blocked'; missing: OutfitSlot[]; message: string }
 
+function outfitItemIdentity(items: readonly Pick<ClosetItem, 'id'>[]): string {
+  return items.map(item => item.id).sort().join('\u0000')
+}
+
+/** 현재 화면의 코디와 실제 아이템 구성이 같은 후보는 "다른 코디"가 아니다. */
+export function alternativeOutfits(
+  outfits: readonly Outfit[],
+  currentItems: readonly Pick<ClosetItem, 'id'>[],
+): Outfit[] {
+  if (currentItems.length === 0) return [...outfits]
+  const currentIdentity = outfitItemIdentity(currentItems)
+  return outfits.filter(outfit => outfitItemIdentity(outfit.items) !== currentIdentity)
+}
+
 /** 대표 두께 — 스코어 표시·정렬용 */
 export function itemThicknessGrade(item: Pick<ClosetItem, 'seasons'>): number {
   if (item.seasons.length === 0) return 3

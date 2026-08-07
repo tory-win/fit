@@ -15,6 +15,7 @@ const servers = []
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => new Promise(resolve => server.close(resolve))))
   delete process.env.TRYON_API_KEY
+  delete process.env.TRYON_API_KEY_FILE
 })
 
 async function requestJson(server, { path = '/__tryon', method = 'GET', body } = {}) {
@@ -72,6 +73,8 @@ describe('tryon-api input boundaries', () => {
   })
 
   it('reports misconfigured health with 503 when API key is missing', async () => {
+    // 개발자 홈의 실제 설정 유무와 관계없이 누락 상태를 재현한다.
+    process.env.TRYON_API_KEY_FILE = '/definitely-missing/ipfit-test-api-key'
     const response = await requestJson(createTryonServer(), {
       path: '/__tryon/health',
     })

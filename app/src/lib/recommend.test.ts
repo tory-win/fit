@@ -5,6 +5,7 @@ import type { DayWeather, WeatherState } from './weather'
 import { EMPTY_BODY, type BodyProfile } from './body'
 import { EMPTY_BIAS, applyFeedback } from './feedback'
 import {
+  alternativeOutfits,
   freshnessOf,
   gapMessage,
   gradeDistance,
@@ -128,6 +129,14 @@ describe('recommend — 부분 코디', () => {
     expect(result.outfits[0].gaps).toEqual(expect.arrayContaining(['상의', '하의']))
   })
 
+  it('한 벌로 만든 현재 코디를 다른 코디라고 다시 내놓지 않는다', () => {
+    const result = recommend(context({ closet: [item('only-top', '상의', '아이보리')] }))
+    if (result.status !== 'ok') throw new Error('expected outfits')
+
+    expect(result.outfits).toHaveLength(1)
+    expect(alternativeOutfits(result.outfits, result.outfits[0].items)).toEqual([])
+  })
+
   it('옷장이 완전히 비었을 때만 막는다', () => {
     const result = recommend(context({ closet: [] }))
     expect(result.status).toBe('blocked')
@@ -208,6 +217,16 @@ describe('recommend — happy path', () => {
     if (result.status !== 'ok') throw new Error('expected outfits')
     const ids = result.outfits.map(outfit => outfit.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('대안 목록에서는 현재 아이템 구성을 순서와 관계없이 제외한다', () => {
+    const result = recommend(context({ closet }))
+    if (result.status !== 'ok') throw new Error('expected outfits')
+    const current = [...result.outfits[0].items].reverse()
+    const alternatives = alternativeOutfits(result.outfits, current)
+
+    expect(alternatives).toHaveLength(result.outfits.length - 1)
+    expect(alternatives.map(outfit => outfit.id)).not.toContain(result.outfits[0].id)
   })
 
   it('is deterministic for the same inputs', () => {

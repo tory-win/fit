@@ -8,7 +8,7 @@
     "dev:linked": "vite --host 127.0.0.1 --port 15174 --strictPort",
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
-    "build:real": "tsc -b && vite build --mode real",
+    "build:real": "VITE_APP_ENV=real tsc -b && VITE_APP_ENV=real vite build --mode real",
     "test": "vitest run",
     "lint": "oxlint",
     "preview": "vite preview",
