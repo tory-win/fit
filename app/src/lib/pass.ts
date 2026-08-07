@@ -50,7 +50,7 @@ export function parsePass(raw: string | null): StylePass | null {
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
     const pass = parsed as Partial<StylePass>
-    if (pass.reason !== 'welcome' && pass.reason !== 'dev') return null
+    if (pass.reason !== 'welcome' && pass.reason !== 'dev' && pass.reason !== 'ad' && pass.reason !== 'coupang') return null
     if (typeof pass.grantedAt !== 'string' || typeof pass.expiresAt !== 'string') return null
     if (!Number.isFinite(new Date(pass.expiresAt).getTime())) return null
     return { reason: pass.reason, grantedAt: pass.grantedAt, expiresAt: pass.expiresAt }
