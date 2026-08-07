@@ -2998,8 +2998,7 @@ function HomeScreen({
               <div className="lock-layer">
                 <Lock aria-hidden="true" />
                 <strong>스타일패스로 열어보세요</strong>
-                <span>브리핑과 점수는 계속 무료예요</span>
-                <button className="lock-cta" onClick={onUnlock}>코디 열어보기</button>
+                <span>아래의 코디 열어보기에서만 열람권을 사용해요</span>
               </div>
             )}
           </div>
