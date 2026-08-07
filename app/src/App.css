@@ -992,6 +992,7 @@ body.camera-active #root {
   display: inline-flex;
   flex: 0 0 auto;
   min-height: 44px;
+  min-width: 44px;
   align-items: center;
   gap: 7px;
   border: 1px solid var(--line);
